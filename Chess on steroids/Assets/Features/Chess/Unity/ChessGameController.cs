@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Chess.Core;
+using Chess.Multiplayer;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -47,6 +48,7 @@ namespace Chess.Unity
         int? _pendingPromotionFrom;
         int? _pendingPromotionTo;
         bool _extraPawnGimmickArmed;
+        bool _multiplayerGameOverDialogShown;
 
         void Awake()
         {
@@ -74,6 +76,8 @@ namespace Chess.Unity
 
             if (newGameButton != null)
                 newGameButton.onClick.AddListener(RestartGame);
+
+            MultiplayerGameplayHud.EnsureBackToLobbyButton(this);
         }
 
         /// <summary>
@@ -277,6 +281,7 @@ namespace Chess.Unity
         {
             ClearPromotionPending();
             _extraPawnGimmickArmed = false;
+            _multiplayerGameOverDialogShown = false;
             _board = Board.StartingPosition();
             _selected = null;
             _legal = MoveGenerator.GenerateLegalMoves(_board);
@@ -498,6 +503,26 @@ namespace Chess.Unity
 
             RefreshGimmickButtonState();
             RefreshGimmickArmedFeedback();
+            TryPromptMultiplayerGameOver();
+        }
+
+        void TryPromptMultiplayerGameOver()
+        {
+            if (_multiplayerGameOverDialogShown)
+                return;
+            if (!FusionDdolHub.IsRunnerActive)
+                return;
+            if (_result != GameResult.WhiteWinsCheckmate && _result != GameResult.BlackWinsCheckmate &&
+                _result != GameResult.Stalemate)
+                return;
+
+            _multiplayerGameOverDialogShown = true;
+            SimpleConfirmDialog.Show(
+                "Game over",
+                "Return to the lobby?",
+                onConfirm: FusionDdolHub.ShutdownAfterUserConfirmed,
+                onCancel: () => { },
+                showCancel: true);
         }
     }
 }
