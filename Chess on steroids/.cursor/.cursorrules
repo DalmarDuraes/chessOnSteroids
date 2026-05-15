@@ -1,0 +1,6 @@
+Follow the official Unity & Microsoft style guides for C#, generating XML comments for functions. Comment liberally, and use as many XML tags as possible (especially when referencing other classes, fields, or parameters).
+
+ We are working on a game, it is built in Unity. 
+
+
+
