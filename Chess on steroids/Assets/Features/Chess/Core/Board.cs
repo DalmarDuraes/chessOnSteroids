@@ -201,7 +201,7 @@ namespace Chess.Core
             MovementCapabilitiesOnSquare[square] &= ~mask;
         }
 
-        public void ApplyMove(Move m)
+        public void ApplyMove(Move m, bool switchTurn = true)
         {
             Piece piece = Squares[m.From];
             PieceMovementCapability fromCaps = MovementCapabilitiesOnSquare[m.From];
@@ -247,7 +247,7 @@ namespace Chess.Core
                 }
 
                 ClearCastlingRightsFor(us);
-                FinishMove(us, piece, m, false);
+                FinishMove(us, piece, m, false, switchTurn);
                 return;
             }
 
@@ -277,7 +277,7 @@ namespace Chess.Core
                 }
 
                 ClearCastlingRightsFor(us);
-                FinishMove(us, piece, m, false);
+                FinishMove(us, piece, m, false, switchTurn);
                 return;
             }
 
@@ -292,7 +292,7 @@ namespace Chess.Core
             MovementCapabilitiesOnSquare[m.To] = capsTo;
 
             UpdateCastlingRightsAfterNormalMove(m, piece, us);
-            FinishMove(us, piece, m, captureOrEp);
+            FinishMove(us, piece, m, captureOrEp, switchTurn);
         }
 
         void ClearCastlingRightsFor(Color us)
@@ -320,7 +320,7 @@ namespace Chess.Core
             if (m.To == Square.Index(7, 7)) CastleBlackKing = false;
         }
 
-        void FinishMove(Color us, Piece piece, Move m, bool captureOrEp)
+        void FinishMove(Color us, Piece piece, Move m, bool captureOrEp, bool switchTurn)
         {
             if (piece.Type == PieceType.Pawn && Square.File(m.From) == Square.File(m.To) && Math.Abs(m.To - m.From) == 16)
                 EnPassantTarget = (m.From + m.To) >> 1;
@@ -331,6 +331,9 @@ namespace Chess.Core
                 HalfmoveClock = 0;
             else
                 HalfmoveClock++;
+
+            if (!switchTurn)
+                return;
 
             if (us == Color.Black)
                 FullmoveNumber++;

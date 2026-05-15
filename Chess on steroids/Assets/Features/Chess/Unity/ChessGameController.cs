@@ -9,6 +9,9 @@ namespace Chess.Unity
 {
     public sealed class ChessGameController : MonoBehaviour
     {
+        const string GimmickArmedFeedback = "Extra pawn move ready — move a pawn next.";
+        const string GimmickIdleFeedback = "";
+
         [SerializeField] ChessBoardView boardView;
         [SerializeField] PiecePrefabLibrary piecePrefabs;
         [SerializeField] LegalMoveHighlight highlights;
@@ -30,6 +33,10 @@ namespace Chess.Unity
         [Header("Movement capabilities (AugmentPanel)")]
         [SerializeField] AugmentPanelView augmentPanel;
 
+        [Header("Gimmicks (GimmicksPanel)")]
+        [SerializeField] Button gainPawnGimmickButton;
+        [SerializeField] TextMeshProUGUI gimmickArmedFeedbackText;
+
         Board _board;
         readonly Dictionary<int, PieceView> _bySquare = new();
         readonly List<Move> _fromToBuffer = new(8);
@@ -39,6 +46,7 @@ namespace Chess.Unity
         GameResult _result = GameResult.InProgress;
         int? _pendingPromotionFrom;
         int? _pendingPromotionTo;
+        bool _extraPawnGimmickArmed;
 
         void Awake()
         {
@@ -59,6 +67,7 @@ namespace Chess.Unity
 
             WirePromotionButtons();
             TryBindAugmentPanel();
+            TryBindGimmicksPanel();
             RebuildPieces();
             UpdateHighlights();
             RefreshStatus();
@@ -113,6 +122,67 @@ namespace Chess.Unity
             }
 
             augmentPanel?.Initialize(this);
+        }
+
+        void TryBindGimmicksPanel()
+        {
+            Canvas canvas = Object.FindAnyObjectByType<Canvas>();
+            Transform gimmickRoot = canvas != null ? FindDeep(canvas.transform, "GimmicksPanel") : null;
+            if (gimmickRoot == null && canvas != null)
+                gimmickRoot = FindDeep(canvas.transform, "GainPawnMovementBTN")?.parent;
+
+            if (gainPawnGimmickButton == null && gimmickRoot != null)
+                gainPawnGimmickButton = gimmickRoot.Find("GainPawnMovementBTN")?.GetComponent<Button>();
+            if (gimmickArmedFeedbackText == null && gimmickRoot != null)
+            {
+                Transform t = gimmickRoot.Find("Gimmickfeedback") ?? FindDeep(gimmickRoot, "Gimmickfeedback");
+                gimmickArmedFeedbackText = t != null ? t.GetComponent<TextMeshProUGUI>() : null;
+            }
+
+            if (gainPawnGimmickButton != null)
+                gainPawnGimmickButton.onClick.AddListener(OnGainPawnGimmickClicked);
+            RefreshGimmickArmedFeedback();
+            RefreshGimmickButtonState();
+        }
+
+        void OnGainPawnGimmickClicked()
+        {
+            if (!ComputeCanArmExtraPawnGimmick())
+                return;
+            _extraPawnGimmickArmed = true;
+            RefreshGimmickArmedFeedback();
+            RefreshGimmickButtonState();
+        }
+
+        static int CountPawns(Board board, Chess.Core.Color color)
+        {
+            int n = 0;
+            for (int i = 0; i < 64; i++)
+            {
+                var p = board.Squares[i];
+                if (!p.IsEmpty && p.Color == color && p.Type == PieceType.Pawn)
+                    n++;
+            }
+
+            return n;
+        }
+
+        bool ComputeCanArmExtraPawnGimmick() =>
+            _result == GameResult.InProgress &&
+            !_pendingPromotionFrom.HasValue &&
+            !_board.IsInCheck(_board.SideToMove) &&
+            CountPawns(_board, _board.SideToMove) > 0;
+
+        void RefreshGimmickButtonState()
+        {
+            if (gainPawnGimmickButton == null) return;
+            gainPawnGimmickButton.interactable = ComputeCanArmExtraPawnGimmick();
+        }
+
+        void RefreshGimmickArmedFeedback()
+        {
+            if (gimmickArmedFeedbackText == null) return;
+            gimmickArmedFeedbackText.text = _extraPawnGimmickArmed ? GimmickArmedFeedback : GimmickIdleFeedback;
         }
 
         static Transform FindDeep(Transform root, string name)
@@ -206,6 +276,7 @@ namespace Chess.Unity
         public void RestartGame()
         {
             ClearPromotionPending();
+            _extraPawnGimmickArmed = false;
             _board = Board.StartingPosition();
             _selected = null;
             _legal = MoveGenerator.GenerateLegalMoves(_board);
@@ -278,6 +349,7 @@ namespace Chess.Unity
             _pendingPromotionFrom = from;
             _pendingPromotionTo = sq;
             promotionPanelRoot.SetActive(true);
+            RefreshStatus();
         }
 
         void OnPromotionChosen(PieceType promotion)
@@ -310,7 +382,18 @@ namespace Chess.Unity
 
         void ApplyMoveComplete(Move move)
         {
-            _board.ApplyMove(move);
+            Piece mover = _board.Squares[move.From];
+            bool wasArmed = _extraPawnGimmickArmed;
+            bool pawnGimmickHalfPly = wasArmed && mover.Type == PieceType.Pawn;
+
+            if (pawnGimmickHalfPly)
+                _board.ApplyMove(move, switchTurn: false);
+            else
+                _board.ApplyMove(move);
+
+            if (wasArmed)
+                _extraPawnGimmickArmed = false;
+
             _selected = null;
             RebuildPieces();
             _legal = MoveGenerator.GenerateLegalMoves(_board);
@@ -392,25 +475,29 @@ namespace Chess.Unity
 
         void RefreshStatus()
         {
-            if (statusText == null) return;
-
-            switch (_result)
+            if (statusText != null)
             {
-                case GameResult.InProgress:
-                    bool inCheck = _board.IsInCheck(_board.SideToMove);
-                    statusText.text = (_board.SideToMove == Chess.Core.Color.White ? "White" : "Black") + " to move"
-                                      + (inCheck ? " — CHECK" : "");
-                    break;
-                case GameResult.WhiteWinsCheckmate:
-                    statusText.text = "White wins — checkmate";
-                    break;
-                case GameResult.BlackWinsCheckmate:
-                    statusText.text = "Black wins — checkmate";
-                    break;
-                case GameResult.Stalemate:
-                    statusText.text = "Stalemate — draw";
-                    break;
+                switch (_result)
+                {
+                    case GameResult.InProgress:
+                        bool inCheck = _board.IsInCheck(_board.SideToMove);
+                        statusText.text = (_board.SideToMove == Chess.Core.Color.White ? "White" : "Black") + " to move"
+                                          + (inCheck ? " — CHECK" : "");
+                        break;
+                    case GameResult.WhiteWinsCheckmate:
+                        statusText.text = "White wins — checkmate";
+                        break;
+                    case GameResult.BlackWinsCheckmate:
+                        statusText.text = "Black wins — checkmate";
+                        break;
+                    case GameResult.Stalemate:
+                        statusText.text = "Stalemate — draw";
+                        break;
+                }
             }
+
+            RefreshGimmickButtonState();
+            RefreshGimmickArmedFeedback();
         }
     }
 }
